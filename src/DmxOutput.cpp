@@ -37,6 +37,7 @@ DmxOutput::return_code DmxOutput::begin(uint pin, PIO pio)
     int sm = pio_claim_unused_sm(pio, false);
     if (sm == -1)
     {
+        pio_remove_program(pio, &DmxOutput_program, prgm_offset);
         return ERR_NO_SM_AVAILABLE;
     }
 
@@ -65,7 +66,12 @@ DmxOutput::return_code DmxOutput::begin(uint pin, PIO pio)
     int dma = dma_claim_unused_channel(false);
 
     if (dma == -1)
+    {
+        pio_sm_set_enabled(pio, sm, false);
+        pio_sm_unclaim(pio, sm);
+        pio_remove_program(pio, &DmxOutput_program, prgm_offset);
         return ERR_NO_DMA_AVAILABLE;
+    }
 
     // Get the default DMA config for our claimed channel
     dma_channel_config dma_conf = dma_channel_get_default_config(dma);
@@ -89,6 +95,7 @@ DmxOutput::return_code DmxOutput::begin(uint pin, PIO pio)
     _sm = sm;
     _pin = pin;
     _dma = dma;
+    _started = true;
 
     return SUCCESS;
 }
@@ -114,6 +121,10 @@ void DmxOutput::write(uint8_t *universe, uint length)
 
 bool DmxOutput::busy()
 {
+    // Never started, so never ready for a write
+    if (!_started)
+        return true;
+
     if (dma_channel_is_busy(_dma))
         return true;
 
@@ -133,6 +144,13 @@ void Dmx::await()
 
 void DmxOutput::end()
 {
+    if (!_started)
+        return;
+    _started = false;
+
+    // A frame is almost always being sent, stop it reading the universe before that is freed
+    dma_channel_abort(_dma);
+
     // Stop the PIO state machine
     pio_sm_set_enabled(_pio, _sm, false);
 

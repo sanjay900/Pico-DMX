@@ -28,6 +28,8 @@ class DmxOutput
     uint _sm;
     PIO _pio;
     uint _dma;
+    // Only set once begin() has claimed everything, so a failed begin() leaves nothing to drive or free
+    bool _started = false;
 
 public:
     /*
